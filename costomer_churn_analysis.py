@@ -1,0 +1,146 @@
+# =============================
+# FINAL CUSTOMER CHURN ANALYSIS CODE
+# =============================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+    RocCurveDisplay
+)
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.linear_model import LogisticRegression
+
+# =============================
+# 1. LOAD DATA
+# =============================
+
+DATA_PATH = r"C:\Users\priya\Downloads\sample_students_data_with_churn.csv"
+
+# Check if file exists
+if not os.path.exists(DATA_PATH):
+    print(r"C:\Users\priya\Downloads\sample_students_data_with_churn.csv", DATA_PATH)
+    print("👉 Move your file to this location OR update DATA_PATH.")
+    exit()
+
+print("✅ File Located Successfully!\n")
+
+# Handle both CSV or Excel
+if DATA_PATH.endswith(".csv"):
+    df = pd.read_csv(DATA_PATH)
+else:
+    df = pd.read_excel(DATA_PATH)
+
+print("📌 First 5 rows of data:")
+print(df.head(), "\n")
+
+# =============================
+# 2. PREPARATION
+# =============================
+
+TARGET_COL = "Churn"  # change if target is named differently
+
+if TARGET_COL not in df.columns:
+    print(f"❌ ERROR: Target column '{TARGET_COL}' not found in dataset.")
+    print("👉 Please confirm your churn column name.")
+    exit()
+
+y = df[TARGET_COL]
+X = df.drop(columns=[TARGET_COL])
+
+# Convert yes/no target to numeric
+mapping = {"Yes": 1, "No": 0, "Y": 1, "N": 0, "True": 1, "False": 0}
+y = y.map(mapping).fillna(y)
+
+if not np.issubdtype(y.dtype, np.number):
+    y, unique_classes = pd.factorize(y)
+    print("🔁 Factorized Target Mapping:")
+    for i, cls in enumerate(unique_classes):
+        print(f"{cls} → {i}")
+
+# =============================
+# 3. TRAIN/TEST SPLIT
+# =============================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=42, stratify=y
+)
+
+print("\n📊 Train/Test Split Done")
+print("Train size:", X_train.shape[0])
+print("Test size:", X_test.shape[0])
+
+# =============================
+# 4. PREPROCESSING
+# =============================
+
+numeric = X.select_dtypes(include=["int64", "float64"]).columns
+categorical = X.select_dtypes(include=["object", "bool"]).columns
+
+preprocess = ColumnTransformer(
+    transformers=[
+        ("num", Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler())
+        ]), numeric),
+
+        ("cat", Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore"))
+        ]), categorical),
+    ]
+)
+
+# =============================
+# 5. MODEL TRAINING
+# =============================
+
+model = LogisticRegression(max_iter=1000, class_weight="balanced")
+
+pipeline = Pipeline([
+    ("preprocess", preprocess),
+    ("model", model)
+])
+
+print("\n⏳ Training the model...")
+pipeline.fit(X_train, y_train)
+print("✅ Training Complete!\n")
+
+# =============================
+# 6. EVALUATION
+# =============================
+
+y_pred = pipeline.predict(X_test)
+y_proba = pipeline.predict_proba(X_test)[:, 1]
+
+print("📌 Accuracy:", round(accuracy_score(y_test, y_pred), 4))
+print("\n📌 Classification Report:\n", classification_report(y_test, y_pred))
+print("📌 Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("📌 ROC-AUC Score:", round(roc_auc_score(y_test, y_proba), 4))
+
+# =============================
+# 7. ROC CURVE
+# =============================
+
+RocCurveDisplay.from_predictions(y_test, y_proba)
+plt.title("ROC Curve - Customer Churn Prediction")
+plt.show()
+
+# =============================
+# 8. SAMPLE PREDICTION
+# =============================
+
+print("\n🔍 Example Predictions on 5 Test Customers:")
+sample = X_test.iloc[:5]
+sample_pred = pipeline.predict(sample)
+print("Predicted churn:",(sample_pred))
